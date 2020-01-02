@@ -41,10 +41,10 @@
 
 
 import math
-import serial
+# import serial
 import pygame
 from pygame.locals import *
-pygame.init()
+# pygame.init()
 import sys
 
 white = (255, 255, 255) 
@@ -54,7 +54,7 @@ grey = (50, 50, 50)
 transparent = (255,255,0)
 orange = (255,128,0)
 
-pygame.display.set_caption('Autopilot Test Display')
+# pygame.display.set_caption('Autopilot Test Display')
 
 class Dial:
    """
@@ -448,83 +448,83 @@ class RfSignal(Generic):
 # serialPort = '/dev/ttyUSB0'
 # baud = 115200
 
-test = 1
-# if (len(sys.argv) == 1):
-#     # No options used at run time. Presume serial port is "dev/ttyUSB0"
-#     test = 0
-#     serialPort = '/dev/ttyUSB0'
-# elif (sys.argv[1] == 'test'):
-#     # Option "test" was selected. Run in test mode. (Dummy data used.)
-#     test = 1
-# else:
-#     # An option other that "test" was enterd. Maybe it's the Serial port.
-#     test = 0
-#     serialPort = sys.argv[1]
-
-# Initialise Serial port.
-# ser = TxSerial(serialPort, baud, test)
-
-# Initialise screen.
-screen = pygame.display.set_mode((640, 640))
-screen.fill(0x222222)
-   
-# Initialise Dials.
-horizon = Horizon(320,20)
-heading = Heading(20,20)
-# turn = TurnCoord(20,180,150,150)
-throttle = Generic(470,200+255,100,100)
-RXbattery = Battery(470-250,200+180,100,100)
-TXbattery = Battery(545-200,200+180,100,100)
-rfSignal = RfSignal(470,200+330,150,150)
-
-test = True
-a=0
-factor = 1
-while 1:
-   # Main program loop.
-   for event in pygame.event.get():
-       if event.type == QUIT:
-           print("Exiting....")
-#            ser.close()  # close serial port.
-           sys.exit()   # end program.
-
-   if(test):
-      # Use dummy test data
-      curPos = pygame.mouse.get_pos()
-      rf_data = {'RX_RSSI':0, 'RX_fr_sucsess':0, 'RX_fr_con_err':0, 'RX_batt_volt':0, \
-                 'RX_batt_cur':0, 'TX_batt_volt':0, 'TX_fr_sucsess':0, 'RX_accel_x':a, \
-                 'RX_accel_y':0, 'RX_est_x':curPos[0]/2, 'RX_est_y':curPos[1]/2}
-      pygame.time.delay(100)
-#    else: 
-      # Get real data from USB port.
-#       rf_data = ser.readline()
-#       rf_data = ser.readline()
-
-   if(rf_data):
-      # We have data.
-      print(rf_data)
-      a += factor
-      if a>45:
-        factor = -1
-      elif a < -45:
-        factor = 1
-    
-
-      # Update dials.
-      horizon.update(screen, a, a )
-      heading.update(screen, a*3, 45 + a/2 )
-#       turn.update(screen, (rf_data['RX_est_x'] - 127)/2, (127 - rf_data['RX_accel_x'])/4)
-      throttle.update(screen, a*3-10)
-      RXbattery.update(screen, a)
-      TXbattery.update(screen, a)
-#       rfSignal.update(screen, rf_data['RX_fr_sucsess'], rf_data['TX_fr_sucsess'],a)
-
-      pygame.display.update()
-   elif not ser.testing:
-      # We do not have any data to display.
-      print(" * No data received. Is the transmitter powered on?")
-      print(" * Restartinging " + serialPort + ".\n")
-      ser = TxSerial(serialPort, baud)
-
+# test = 1
+# # if (len(sys.argv) == 1):
+# #     # No options used at run time. Presume serial port is "dev/ttyUSB0"
+# #     test = 0
+# #     serialPort = '/dev/ttyUSB0'
+# # elif (sys.argv[1] == 'test'):
+# #     # Option "test" was selected. Run in test mode. (Dummy data used.)
+# #     test = 1
+# # else:
+# #     # An option other that "test" was enterd. Maybe it's the Serial port.
+# #     test = 0
+# #     serialPort = sys.argv[1]
+# 
+# # Initialise Serial port.
+# # ser = TxSerial(serialPort, baud, test)
+# 
+# # Initialise screen.
+# screen = pygame.display.set_mode((640, 480))
+# screen.fill(0x222222)
+#    
+# # Initialise Dials.
+# horizon = Horizon(320,20)
+# heading = Heading(20,20)
+# # turn = TurnCoord(20,180,150,150)
+# throttle = Generic(470,255,150,150)
+# RXbattery = Battery(470,180,75,75)
+# TXbattery = Battery(545,180,75,75)
+# rfSignal = RfSignal(470,330,150,150)
+# 
+# test = True
+# a=0
+# factor = 1
+# while 1:
+#    # Main program loop.
+#    for event in pygame.event.get():
+#        if event.type == QUIT:
+#            print("Exiting....")
+# #            ser.close()  # close serial port.
+#            sys.exit()   # end program.
+# 
+#    if(test):
+#       # Use dummy test data
+#       curPos = pygame.mouse.get_pos()
+#       rf_data = {'RX_RSSI':0, 'RX_fr_sucsess':0, 'RX_fr_con_err':0, 'RX_batt_volt':0, \
+#                  'RX_batt_cur':0, 'TX_batt_volt':0, 'TX_fr_sucsess':0, 'RX_accel_x':a, \
+#                  'RX_accel_y':0, 'RX_est_x':curPos[0]/2, 'RX_est_y':curPos[1]/2}
+#       pygame.time.delay(100)
+# #    else: 
+#       # Get real data from USB port.
+# #       rf_data = ser.readline()
+# #       rf_data = ser.readline()
+# 
+#    if(rf_data):
+#       # We have data.
+#       print(rf_data)
+#       a += factor
+#       if a>45:
+#         factor = -1
+#       elif a < -45:
+#         factor = 1
+#     
+# 
+#       # Update dials.
+#       horizon.update(screen, a, a )
+#       heading.update(screen, a*3, 45 + a/2 )
+# #       turn.update(screen, (rf_data['RX_est_x'] - 127)/2, (127 - rf_data['RX_accel_x'])/4)
+# #       throttle.update(screen, a*3-10)
+# #       RXbattery.update(screen, a)
+# #       TXbattery.update(screen, a)
+# #       rfSignal.update(screen, rf_data['RX_fr_sucsess'], rf_data['TX_fr_sucsess'],a)
+# 
+#       pygame.display.update()
+#    elif not ser.testing:
+#       # We do not have any data to display.
+#       print(" * No data received. Is the transmitter powered on?")
+#       print(" * Restartinging " + serialPort + ".\n")
+#       ser = TxSerial(serialPort, baud)
+# 
 
 

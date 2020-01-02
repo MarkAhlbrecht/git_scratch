@@ -9,6 +9,8 @@
 
 import time
 
+maxAuthority = 100
+
 class PID:
     """ Simple PID control.
 
@@ -51,6 +53,8 @@ class PID:
         self.Cp = 0
         self.Ci = 0
         self.Cd = 0
+        
+        self.output = 0
 
 
     def GenOut(self, error):
@@ -63,8 +67,13 @@ class PID:
         de = error - self.prev_err              # get delta error
 
         self.Cp = self.Kp * error               # proportional term
-        self.Ci += error * dt                   # integral term
-
+ 
+                                                # integral term
+        if abs(self.output) < maxAuthority:
+          self.Ci += error * dt 
+        else:
+          self.Ci = 0
+                          
         self.Cd = 0
         if dt > 0:                              # no div by zero
             self.Cd = de/dt                     # derivative term
@@ -73,5 +82,6 @@ class PID:
         self.prev_err = error                   # save t-1 error
 
         # sum the terms and return the result
-        print("PID {0},{1},{2}".format(self.Cp,self.Kd * self.Cd,self.Ki * self.Ci))
-        return self.Cp + (self.Ki * self.Ci) + (self.Kd * self.Cd)
+#         print("PID {0},{1},{2}".format(self.Cp,self.Kd * self.Cd,self.Ki * self.Ci))
+        self.output = self.Cp + (self.Ki * self.Ci) + (self.Kd * self.Cd)
+        return self.output

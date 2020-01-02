@@ -1,60 +1,60 @@
-#!/usr/bin/python
-"""
- * dial.py
- *
- * Updated to add heading indicator
- * 
- * Created on: 1 Nov 2010
- * Author:     Duncan Law
- * 
- *      Copyright (C) 2010 Duncan Law
- *      This program is free software; you can redistribute it and/or modify
- *      it under the terms of the GNU General Public License as published by
- *      the Free Software Foundation; either version 2 of the License, or
- *      (at your option) any later version.
- *
- *      This program is distributed in the hope that it will be useful,
- *      but WITHOUT ANY WARRANTY; without even the implied warranty of
- *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *      GNU General Public License for more details.
- *
- *      You should have received a copy of the GNU General Public License
- *      along with this program; if not, write to the Free Software
- *      Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-
-
- *      Thanks to Chootair at http://www.codeproject.com/Members/Chootair 
- *      for the inspiration and the artwork that i based this code on.
- *      His full work is intended for C# and can be found here:
- *      http://www.codeproject.com/KB/miscctrl/Avionic_Instruments.aspx
-
-
-
-
- * Requires pySerial and pyGame to run.
- * http://pyserial.sourceforge.net
- * http://www.pygame.org
-
-"""
-
-
-
-
+from sense_hat import SenseHat
+import numpy as np
+import time
 import math
-import serial
+from math import cos, sin, radians, degrees, sqrt, atan2, asin
 import pygame
 from pygame.locals import *
 pygame.init()
 import sys
+import PID
+import RPi.GPIO as GPIO
 
+"""
+
+  Heading Control Test 
+  Note: Requires sense_hat 2.2.0 or later
+
+"""
+#
+# Configuration
+#
+#####
+# Predetermined Mag Calibraton
+####
+xBias = 19.31
+yBias = 32.12
+xSF = 0.705
+ySF = 0.693
+
+#
+# AHRS Smoothing filter time constant
+tau = 1/40
+
+# Controller setup
+setTilt = 0
+# Kp = -30
+# Kd = -3
+# Ki = -0
+Kp = -1
+Ki = -0.1
+Kd = 0
+#
+# Log file name
+#
+logFile=open("/home/pi/Projects/git_scratch/VMS/heading_ctrl_test.csv","w+")
+
+
+
+"""
+" Dials Objects
+"""
 white = (255, 255, 255) 
 green = (0, 255, 0) 
 blue = (0, 0, 128)
 grey = (50, 50, 50)
 transparent = (255,255,0)
 orange = (255,128,0)
-
-pygame.display.set_caption('Autopilot Test Display')
 
 class Dial:
    """
@@ -182,7 +182,7 @@ class Heading(Dial):
        if displayAngle < 0:
            displayAngle +=360
        if setAngle < 0:
-           setAngle +=360 
+           setAngle +=360
        text = self.font.render("{:03d}".format(int(displayAngle)), True, orange, grey)
        textSetAngle = self.font.render("{:03d}".format(int(setAngle)), True, green, grey)
 # create a rectangular object for the 
@@ -383,148 +383,434 @@ class RfSignal(Generic):
 
 
 
-# 
-# class TxSerial:
-#    """
-#    Wrapper round pyserial.
-#    """
-#    def __init__(self, port, baud, testing=0):
-#       """
-#       Open serial port if possible.
-#       Exit program if not.
-#       "testing" = 1 prevents the program teminating if valid serial port is not found.
-#       """
-#       self.testing = testing
-#       try:
-#          self.serial = serial.Serial(port, baud, timeout=1)
-#       except serial.SerialException:
-#          print serialPort + " not found."
-#          print
-#          print "Usage: " + sys.argv[0] + " [SERIAL_DEVICE]"
-#          print " Opens SERIAL_DEVICE and lisens for telemitery data."
-#          print " If SERIAL_DEVICE not specified, /dev/ttyUSB0 will be tried."
-#          print "Usage: " + sys.argv[0] + " test"
-#          print " Uses dummy data for testing purposes."
-#          print
-#          if (not testing):
-#             sys.exit()
-# 
-#    def readline(self):
-#       """
-#       Returns data from serial port 
-#       or dummy data if "testing"=1.
-#       """
-#       if (not self.testing):
-#           line = self.serial.readline()
-#       else:
-#           line = ''
-#       rf_data = 0
-#       if (len(line)==35):
-#          rf_data = {'RX_RSSI':int(line[1:3],16), 'RX_fr_sucsess':int(line[4:6],16), \
-#                     'RX_fr_con_err':int(line[7:9],16), 'RX_batt_volt':int(line[10:12],16), \
-#                     'RX_batt_cur':int(line[13:15],16), 'TX_batt_volt':int(line[16:18],16), \
-#                     'TX_fr_sucsess':int(line[19:21],16), 'RX_accel_x':int(line[22:24],16), \
-#                     'RX_accel_y':int(line[25:27],16), 'RX_est_x':int(line[28:30],16), \
-#                     'RX_est_y':int(line[31:33],16)}
-#       elif (self.testing):
-#          # dummy testing data
-#          rf_data = {'RX_RSSI':0, 'RX_fr_sucsess':0, 'RX_fr_con_err':0, 'RX_batt_volt':0, \
-#                     'RX_batt_cur':0, 'TX_batt_volt':0, 'TX_fr_sucsess':0, 'RX_accel_x':0, \
-#                     'RX_accel_y':0, 'RX_est_x':0, 'RX_est_y':0}
-#       return rf_data
-#    def close(self):
-#       """
-#       Close serial port.
-#       """
-#       if((not self.testing) and self.serial.isOpen()):
-#          self.serial.close()      # close serial port.
 
+"""
+"   c2euler
+"   This routine converts euler measurments to C matrix representations
+"   Input: pitch roll yaw
+"   Output: C matrix
+"""
+def euler2C(pitch,roll,yaw):
+    C = np.zeros( (3,3) )
+    cTheta = cos(pitch)
+    sTheta = sin(pitch)
+    cPhi = cos(roll)
+    sPhi = sin(roll)
+    cPsi = cos(yaw)
+    sPsi = sin(yaw)
+    C[0,0] = cTheta*cPsi
+    C[0,1] = -1*cPhi*sPsi + sPhi*sTheta*cPsi
+    C[0,2] = sPhi*sPsi + cPhi*sTheta*cPsi
+    C[1,0] = cTheta*sPsi
+    C[1,1] = cPhi*cPsi + sPhi*sTheta*sPsi
+    C[1,2] = -sPhi*cPsi + cPhi*sTheta*sPsi
+    C[2,0] = -sTheta
+    C[2,1] = sPhi*cTheta
+    C[2,2] = cPhi*cTheta
+    return C
 
+"""
+"   c2euler
+"   This routine converts a C matrix represention to euler representation
+"   Input: C matrix
+"   Output: pitch roll yaw
+"""
+def c2euler(C):
+    pitch = -1*asin(C[2,0])
+    yaw = atan2(C[1,0],C[0,0])
+    roll = atan2(C[2,1],C[2,2])
+    return (pitch,roll,yaw)
 
+"""
+"   ortho_norm
+"   This routine ortho normalizes a C matrix
+"   Input: C matrix
+"   Output: Ortho normed C matrix
+"""
+def ortho_norm(C):
+    x = C[:,0]
+    y = C[:,1]
+    z = C[:,2]
+    
+    e = x.transpose()
+    e = e.dot(y)
+    eScalar = e/2
+    
+    xOrtho = x - e*y
+    yOrtho = y - e*x
+    zOrtho = np.cross(xOrtho,yOrtho)
+    
+    xNorm = 0.5*(3 - xOrtho.transpose().dot(xOrtho))*xOrtho
+    yNorm = 0.5*(3 - yOrtho.transpose().dot(yOrtho))*yOrtho
+    zNorm = 0.5*(3 - zOrtho.transpose().dot(zOrtho))*zOrtho
+    
+    Con = np.column_stack( (xNorm,yNorm,zNorm) )
+    return Con
 
+"""
+" Update the sense hat screen
+"""
+def update_screen(angle, show_letter = False):
+  
+  yorig = 3
+  xorig = 3
+  ca = cos(radians(angle))
+  sa = sin(radians(angle))
+  sense.clear()
+  
+  
+  for l in range(-10,0):
+    x = int(ca*float(l)/2 + xorig)
+    y = int(sa*float(l)/2 + yorig)
+    if x >= 0 and x <= 7 and y >= 0 and y <= 7:
+      sense.set_pixel(x,y,white)
+  for l in range(0,10):
+    x = int(ca*float(l)/2 + xorig)
+    y = int(sa*float(l)/2 + yorig)
+    if x >= 0 and x <= 7 and y >= 0 and y <= 7:
+      sense.set_pixel(x,y,red)
+  sense.set_pixel(xorig,yorig,green)
 
+"""
+" Motor driver
+"""
+def drive_motor(omegaMotor):
+  deadBand = 12;
+  Kpwm = 1;
+  if abs(omegaMotor) > deadBand:
+    drive1 = omegaMotor > 0
+    drive2 = not drive1
+    motorPwm = abs(Kpwm*omegaMotor)
+    if motorPwm > 100:
+      motorPwm = 100
+    #
+    # Command Motor Pins
+    #
+  else:
+    drive1 = False
+    drive2 = False
+    motorPwm = 0
+  #
+  # Command Motor Pins
+  #
 
+  return (drive1,drive2,motorPwm)
+  
 
-# serialPort = '/dev/ttyUSB0'
-# baud = 115200
+"""
+  Main Program
+"""
+# Initialization
+sense = SenseHat()
+sense.clear()
 
-test = 1
-# if (len(sys.argv) == 1):
-#     # No options used at run time. Presume serial port is "dev/ttyUSB0"
-#     test = 0
-#     serialPort = '/dev/ttyUSB0'
-# elif (sys.argv[1] == 'test'):
-#     # Option "test" was selected. Run in test mode. (Dummy data used.)
-#     test = 1
-# else:
-#     # An option other that "test" was enterd. Maybe it's the Serial port.
-#     test = 0
-#     serialPort = sys.argv[1]
-
-# Initialise Serial port.
-# ser = TxSerial(serialPort, baud, test)
-
-# Initialise screen.
-screen = pygame.display.set_mode((640, 640))
+screen = pygame.display.set_mode((640, 480))
 screen.fill(0x222222)
-   
-# Initialise Dials.
+pygame.display.set_caption('Autopilot Test Display')
+#    
+# # Initialise Dials.
 horizon = Horizon(320,20)
 heading = Heading(20,20)
-# turn = TurnCoord(20,180,150,150)
-throttle = Generic(470,200+255,100,100)
-RXbattery = Battery(470-250,200+180,100,100)
-TXbattery = Battery(545-200,200+180,100,100)
-rfSignal = RfSignal(470,200+330,150,150)
 
-test = True
-a=0
-factor = 1
-while 1:
-   # Main program loop.
-   for event in pygame.event.get():
+errorDial = Generic(20,340,100,100)
+propDial = Generic(160,340,100,100)
+integDial = Generic(270,340,100,100)
+derivDial = Generic(380,340,100,100)
+motorDial = Generic(520,340,100,100)
+
+
+horizon.update(screen, 0, 0 )
+heading.update(screen, 0, 0 )
+errorDial.update(screen, 0 )
+propDial.update(screen, 0 )
+integDial.update(screen, 0 )
+derivDial.update(screen, 0 )
+motorDial.update(screen, 0 )
+
+
+pygame.display.update()
+#
+# Setup Motor Control Pins
+#
+GPIO.setmode(GPIO.BOARD)
+
+GPIO.setup(11, GPIO.OUT)
+GPIO.setup(12, GPIO.OUT)
+GPIO.setup(7, GPIO.OUT)
+pwm=GPIO.PWM(7, 100)
+pwm.start(0)
+drive1 = 0
+drive2 = 0
+motorPwm = 0
+
+#
+
+
+# Controller
+tiltController = PID.PID()
+tiltController.SetKp(Kp)
+tiltController.SetKi(Ki)
+tiltController.SetKd(Kd)
+
+# Time initialization
+startTime = time.time()
+prevUpdateTime = 0
+
+# Warmup Period
+# This allows some of the initial crazy samples to bleed out
+print("Warming up ...")
+for i in range(1,101):
+  gyroRaw = sense.get_gyroscope_raw()
+  accelRaw = sense.get_accelerometer_raw()
+  magRaw = sense.get_compass_raw()
+  temp = sense.get_temperature()
+  
+#
+#   Alignment Period
+#   Collect a set of data while the unit is motionless to establish
+#   initial level and initial gyro bias
+alignAccel = np.array([0,0,0])
+alignGyro = np.array([0,0,0])
+alignMag = np.array([0,0,0])
+
+print("Aligning ...")
+alignSamples = 100
+for i in range(1,alignSamples+1):
+    elapsedTime = time.time() - startTime  
+    gyroRaw = sense.get_gyroscope_raw()
+    accelRaw = sense.get_accelerometer_raw()
+    magRaw = sense.get_compass_raw()
+    temp = sense.get_temperature()
+    magRaw["x"] = xSF *(magRaw["x"] - xBias)
+    magRaw["y"] = ySF *(magRaw["y"] - yBias)
+
+    logFile.write("0,{0},{x},{y},{z}\r\n".format(elapsedTime,**gyroRaw)) # rad/sec
+    logFile.write("1,{0},{x},{y},{z}\r\n".format(elapsedTime,**accelRaw)) # Gs
+    logFile.write("2,{0},{x},{y},{z}\r\n".format(elapsedTime,**magRaw)) # microT
+    logFile.write("7,{0},{1}\r\n".format(elapsedTime,temp))
+    
+    alignAccel = alignAccel + \
+               1/alignSamples*np.array([accelRaw["x"], accelRaw["y"],accelRaw["z"]])
+    alignGyro = alignGyro + \
+               1/alignSamples*np.array([gyroRaw["x"], gyroRaw["y"],gyroRaw["z"]])
+    alignMag = alignMag + \
+               1/alignSamples*np.array([magRaw["x"], magRaw["y"],magRaw["z"]])
+
+# Establish initial prich roll from averaged accel measures
+alignPitch = asin(-1*alignAccel[0])
+alignRoll = atan2(alignAccel[1],1.0)
+Ca = euler2C(alignPitch,alignRoll,0.0)
+
+# Establish initial heading from horizontal mag measuremetns
+magL = Ca.dot(alignMag.transpose())
+yaw = atan2(-1*magL[1],magL[0])
+
+# Initialize Gyro, Accel, and Filtered to Level transitions
+C_AL = euler2C(alignPitch,alignRoll,yaw)
+C_GL = euler2C(alignPitch,alignRoll,yaw)
+C_FL = euler2C(alignPitch,alignRoll,yaw)
+
+# Initial Gyro bias is the average over sample period
+gyroBias = alignGyro
+
+# Print out the results
+(p,r,y) = c2euler(C_AL)
+print(degrees(p))
+print(degrees(r))
+print(degrees(y))
+
+
+# AHRS Loop
+
+r180 = radians(180)
+nr180 = radians(-180)
+r360 = radians(360)
+
+deltaTheta = np.array([0, 0 , 0])
+accumTheta = np.array([0, 0 , 0])
+omega = np.array( [0, 0, 0] )
+deltaC = np.ones( (3,3) )
+
+sense.clear()
+prevUpdateTime = time.time() - startTime
+prevTime = time.time() - startTime
+
+runFlag = True
+while runFlag:
+ 
+  ######################
+  # Fast Loop
+  ######################
+  elapsedTime = time.time() - startTime
+  gyroRaw = sense.get_gyroscope_raw()
+  accelRaw = sense.get_accelerometer_raw()
+  magRaw = sense.get_compass_raw()
+  temp = sense.get_temperature()
+
+  
+  logFile.write("0,{0},{x},{y},{z}\r\n".format(elapsedTime,**gyroRaw)) # rad/sec
+  logFile.write("1,{0},{x},{y},{z}\r\n".format(elapsedTime,**accelRaw)) # Gs
+  logFile.write("2,{0},{x},{y},{z}\r\n".format(elapsedTime,**magRaw)) # microT
+  logFile.write("7,{0},{1}\r\n".format(elapsedTime,temp))
+  magRaw["x"] = xSF *(magRaw["x"] - xBias)
+  magRaw["y"] = ySF *(magRaw["y"] - yBias)
+ 
+  deltaTime = elapsedTime - prevTime
+  
+#   print("0,{0},{x},{y},{z}".format(elapsedTime,**gyroRaw)) # rad/sec
+#   print("1,{0},{x},{y},{z}".format(elapsedTime,**accelRaw)) # Gs
+#   print("2,{0},{x},{y},{z}".format(elapsedTime,**magRaw))
+
+# Accumplate Rates
+  omega = np.array( (gyroRaw["x"], gyroRaw["y"], gyroRaw["z"]) ) - gyroBias
+  deltaTheta = omega*deltaTime # Basic Integration
+  accumTheta = accumTheta + deltaTheta 
+#   print("Dt {0} {1} {2}".format(degrees(accumTheta[0]),degrees(accumTheta[1]),degrees(accumTheta[2])))
+
+# Form the deltaC matrix from the angular rotations
+# Single taylor series with small angle assumption
+  deltaC[0,1] = -1*deltaTheta[2]
+  deltaC[0,2] = deltaTheta[1]
+  deltaC[1,0] = deltaTheta[2]
+  deltaC[1,2] = -1*deltaTheta[0]
+  deltaC[2,0] = -1*deltaTheta[1]
+  deltaC[2,1] = deltaTheta[0]
+
+# Update the gyro and filter solution
+  C_GL = C_GL.dot(deltaC)
+  C_FL = C_FL.dot(deltaC)
+
+# Determine the Accel Solution
+  accelPitch = asin(-1*accelRaw["x"])
+  accelRoll = atan2(accelRaw["y"],1.0)
+  accelMag = np.array([magRaw["x"], magRaw["y"],magRaw["z"]])
+  C_AL = euler2C(accelPitch,accelRoll,0.0)
+#   print(Ca)
+  magL = C_AL.dot(accelMag.transpose())
+#   print(magL)
+  yaw = atan2(-1*magL[1],magL[0])
+  C_AL = euler2C(accelPitch,accelRoll,yaw)
+  
+  # Update the filtered solution with the data from the
+  # Accel based solution
+  (pf,rf,yf) = c2euler(C_FL)
+  pf = (1-tau)*pf + tau*accelPitch
+  rf = (1-tau)*rf + tau*accelRoll
+  ey = yf-yaw
+  if ey > r180:
+    ey = ey - r360
+  elif ey < -r180:
+    ey = ey + r360
+  yf = (1-tau)*yf + tau*(yf - ey)
+  if yf > r180:
+      yf = yf-r360
+  elif yf < -r180:
+      yf = yf+r360
+  C_FL = euler2C(pf,rf,yf)
+#   print("Att --> {0} {1} {2}".format(degrees(pf),degrees(rf),degrees(yf)))
+
+  # Controller
+  error = degrees(yf) - setTilt
+  if error > 180:
+      error = error - 360
+  elif error <= -180:
+      error = error + 360
+  ctrlOutput = tiltController.GenOut(error)
+  dp = tiltController.Cp
+  di = tiltController.Ki * tiltController.Ci
+  dd = tiltController.Kd * tiltController.Cd
+#   di = 0  + (self.Ki * self.Ci) + (self.Kd * self.Cd)
+#   dd = 0
+  
+  # Motor Drive
+  (drive1,drive2,motorPwm) = drive_motor(ctrlOutput)
+  GPIO.output(11, drive1)
+  GPIO.output(12, drive2)
+  pwm.ChangeDutyCycle(motorPwm)
+
+  # Manual Sense Controls
+  selection = False
+  events = sense.stick.get_events()
+  for event in events:
+      # Skip releases
+      if event.action != "released":
+        if event.direction == "left":
+          setTilt -= 30
+          selection = True
+        elif event.direction == "right":
+          setTilt += 30
+          selection = True
+        elif event.direction == "up":
+          (drive1,drive2,motorPwm) = drive_motor(25)
+          selection = True
+        elif event.direction == "down":
+          (drive1,drive2,motorPwm) = drive_motor(-25)
+          selection = True
+        elif event.direction == "middle":
+          runFlag = False
+          (drive1,drive2,motorPwm) = drive_motor(0)
+          selection = True
+
+  if setTilt > 180:
+    setTilt -= 360
+  if setTilt < -180:
+    setTilt += 360
+#
+  prevTime = elapsedTime
+  
+  
+  
+  ###############################
+  # Slow Loop
+  ###############################
+  if (elapsedTime - prevUpdateTime)>0.25:
+#     print("0,{0},{x},{y},{z}".format(elapsedTime,**gyroRaw)) # rad/sec
+#     print("1,{0},{x},{y},{z}".format(elapsedTime,**accelRaw)) # Gs
+#     print("2,{0},{x},{y},{z}".format(elapsedTime,**magRaw))
+#     print(Cg)
+    C_GL = ortho_norm(C_GL)
+    for event in pygame.event.get():
        if event.type == QUIT:
            print("Exiting....")
-#            ser.close()  # close serial port.
+           GPIO.output(11, False)
+           GPIO.output(12, False)
+           GPIO.output(7, False)
+           pwm.stop()
+
+           GPIO.cleanup()
+           sense.clear()
            sys.exit()   # end program.
+           
+    horizon.update(screen, degrees(-1*rf), degrees(pf) )
+    heading.update(screen, degrees(yf), setTilt)
+    errorDial.update(screen, error )
+    propDial.update(screen, dp*1.35 )
+    integDial.update(screen, di*1.35 )
+    derivDial.update(screen, dd*1.35 )
+    motorDial.update(screen, ctrlOutput*1.35 )
+    pygame.display.update()
 
-   if(test):
-      # Use dummy test data
-      curPos = pygame.mouse.get_pos()
-      rf_data = {'RX_RSSI':0, 'RX_fr_sucsess':0, 'RX_fr_con_err':0, 'RX_batt_volt':0, \
-                 'RX_batt_cur':0, 'TX_batt_volt':0, 'TX_fr_sucsess':0, 'RX_accel_x':a, \
-                 'RX_accel_y':0, 'RX_est_x':curPos[0]/2, 'RX_est_y':curPos[1]/2}
-      pygame.time.delay(100)
-#    else: 
-      # Get real data from USB port.
-#       rf_data = ser.readline()
-#       rf_data = ser.readline()
-
-   if(rf_data):
-      # We have data.
-      print(rf_data)
-      a += factor
-      if a>45:
-        factor = -1
-      elif a < -45:
-        factor = 1
     
+#     Cf = ortho_norm(Cf)
+#     print(Cg)
+#     (p,r,y) = c2euler(C_GL)
+#     (pf,rf,yf) = c2euler(C_FL)
+#     print("Gyro : {0} {1} {2}".format(degrees(p),degrees(r),degrees(y)))
+#     print("Accel: {0} {1} {2}".format(degrees(alignPitch),degrees(alignRoll),degrees(yaw)))
+    print("Att    : {0:+.2f} {1:+.2f} {2:+.2f}".format(degrees(pf),degrees(rf),degrees(yf)))
+    print("Ctl In : {0:+.2f} {1:+.2f} {2:+.2f}".format(degrees(yaw),setTilt,error))
+    print("Ctl Out: {0:+.2f} ->  {1:+.2f} {2:+.2f} {3:+.2f} = {4:+.2f}".format(error,dp,di,dd,ctrlOutput))
 
-      # Update dials.
-      horizon.update(screen, a, a )
-      heading.update(screen, a*3, 45 + a/2 )
-#       turn.update(screen, (rf_data['RX_est_x'] - 127)/2, (127 - rf_data['RX_accel_x'])/4)
-      throttle.update(screen, a*3-10)
-      RXbattery.update(screen, a)
-      TXbattery.update(screen, a)
-#       rfSignal.update(screen, rf_data['RX_fr_sucsess'], rf_data['TX_fr_sucsess'],a)
+    print("")
+    prevUpdateTime = elapsedTime 
 
-      pygame.display.update()
-   elif not ser.testing:
-      # We do not have any data to display.
-      print(" * No data received. Is the transmitter powered on?")
-      print(" * Restartinging " + serialPort + ".\n")
-      ser = TxSerial(serialPort, baud)
+print("Exiting....")
+GPIO.output(11, False)
+GPIO.output(12, False)
+GPIO.output(7, False)
+pwm.stop()
 
-
+GPIO.cleanup()
+sense.clear()
+sys.exit()   # end program.
 
